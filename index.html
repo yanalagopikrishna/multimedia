@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List</title>
+    <style>
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            animation: gradient 30s ease infinite;
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            color: white;
+            padding: 20px;
+            margin: 0;
+            height: 100vh;
+            overflow: auto;
+        }
+        .container {
+            max-width: 1000px;
+            margin: auto;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            overflow: auto;
+        }
+        input[type="text"], input[type="date"], input[type="email"], select, button {
+            padding: 10px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+        input:focus, button:focus {
+            outline: none;
+            box-shadow: 0 0 5px #719ECE;
+        }
+        button {
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            max-height: 300px; /* Controlled max height for scroll */
+            overflow-y: auto; /* Enable scrolling */
+        }
+        li {
+            padding: 10px;
+            margin-top: 5px;
+            background-color: #f8f8f8;
+            color: black;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            animation: fadeIn 0.5s ease;
+        }
+        .high { background-color: #ff686b; }
+        .medium { background-color: #ffcf68; }
+        .low { background-color: #68ffcf; }
+        .completed { text-decoration: line-through; color: #ccc; }
+        .delete-btn, .edit-btn {
+            color: red;
+            cursor: pointer;
+        }
+        .edit-btn {
+            color: blue;
+            margin-right: 10px;
+        }
+        .stats, .chart-container {
+            width: 100%; /* Set the width to 100% of the container or a fixed width like 500px */
+            height: 300px; /* Set a fixed height for the chart */
+            margin-top: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 4px;
+            box-sizing: border-box; /* Ensure padding and borders are included in the width/height */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>To-Do List</h1>
+        <input type="text" id="taskInput" placeholder="Add new task...">
+        <input type="date" id="deadlineInput">
+        <select id="priorityInput">
+            <option value="High">High Priority</option>
+            <option value="Medium">Medium Priority</option>
+            <option value="Low">Low Priority</option>
+        </select>
+        <select id="categoryInput">
+            <option value="Personal">Personal</option>
+            <option value="Work">Work</option>
+            <option value="Other">Other</option>
+        </select>
+        <input type="email" id="reminderEmail" placeholder="Enter email for reminders (mock)">
+        <button onclick="addTask()">Add Task</button>
+        <ul id="taskList"></ul>
+        <div class="stats"></div>
+        <div class="chart-container">
+            <canvas id="taskChart"></canvas>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const taskInput = document.getElementById('taskInput');
+            const deadlineInput = document.getElementById('deadlineInput');
+            const priorityInput = document.getElementById('priorityInput');
+            const categoryInput = document.getElementById('categoryInput');
+            const reminderEmail = document.getElementById('reminderEmail');
+            const taskList = document.getElementById('taskList');
+            const stats = document.querySelector('.stats');
+            const chartCanvas = document.getElementById('taskChart').getContext('2d');
+            let chartInstance = null;
+
+            const tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+            updateStats();
+            tasks.forEach(addTaskToList);
+            updateChart();
+
+            function addTask() {
+                const taskText = taskInput.value.trim();
+                const taskDeadline = deadlineInput.value;
+                const taskPriority = priorityInput.value;
+                const taskCategory = categoryInput.value;
+                const email = reminderEmail.value;
+                if (taskText !== '') {
+                    const task = { text: taskText, deadline: taskDeadline, priority: taskPriority, category: taskCategory, email: email, completed: false };
+                    tasks.push(task);
+                    addTaskToList(task);
+                    localStorage.setItem('tasks', JSON.stringify(tasks));
+                    taskInput.value = '';
+                    deadlineInput.value = '';
+                    reminderEmail.value = '';
+                    updateStats();
+                    updateChart();
+                } else {
+                    alert('Please enter a task.');
+                }
+            }
+
+            function addTaskToList(task) {
+                const listItem = document.createElement('li');
+                listItem.innerHTML = `${task.text} (${task.category}) - Priority: ${task.priority} <span class='task-deadline'> - Due: ${task.deadline}</span>`;
+                listItem.className = task.priority.toLowerCase();
+                listItem.classList.toggle('completed', task.completed);
+
+                const editBtn = document.createElement('span');
+                editBtn.textContent = 'edit';
+                editBtn.className = 'edit-btn';
+                editBtn.onclick = () => editTask(task, listItem);
+
+                const deleteBtn = document.createElement('span');
+                deleteBtn.textContent = 'x';
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.onclick = function () {
+                    listItem.style.animation = "fadeOut 0.5s forwards";
+                    setTimeout(() => {
+                        listItem.remove();
+                        const index = tasks.findIndex(t => t.text === task.text && t.deadline === task.deadline);
+                        tasks.splice(index, 1);
+                        localStorage.setItem('tasks', JSON.stringify(tasks));
+                        updateStats();
+                        updateChart();
+                    }, 500);
+                };
+
+                listItem.appendChild(editBtn);
+                listItem.appendChild(deleteBtn);
+                listItem.onclick = function (event) {
+                    if (event.target !== deleteBtn && event.target !== editBtn) {
+                        task.completed = !task.completed;
+                        listItem.classList.toggle('completed');
+                        localStorage.setItem('tasks', JSON.stringify(tasks));
+                        updateStats();
+                        updateChart();
+                    }
+                };
+
+                taskList.appendChild(listItem);
+            }
+
+            function editTask(task, listItem) {
+                taskInput.value = task.text;
+                deadlineInput.value = task.deadline;
+                priorityInput.value = task.priority;
+                categoryInput.value = task.category;
+                const editIndex = tasks.findIndex(t => t.text === task.text && t.deadline === task.deadline);
+                tasks.splice(editIndex, 1);
+                listItem.remove();
+                updateStats();
+                updateChart();
+            }
+
+            function updateStats() {
+                const completedCount = tasks.filter(t => t.completed).length;
+                const totalCount = tasks.length;
+                stats.textContent = `Completed: ${completedCount} / Total: ${totalCount}`;
+            }
+
+            function updateChart() {
+                const categories = tasks.reduce((acc, task) => {
+                    acc[task.category] = (acc[task.category] || 0) + 1;
+                    return acc;
+                }, {});
+                const data = {
+                    labels: Object.keys(categories),
+                    datasets: [{
+                        label: 'Tasks per Category',
+                        data: Object.values(categories),
+                        backgroundColor: ['red', 'blue', 'green', 'yellow', 'purple', 'orange'],
+                        hoverOffset: 4
+                    }]
+                };
+                if (chartInstance) {
+                    chartInstance.data = data;
+                    chartInstance.update();
+                } else {
+                    chartInstance = new Chart(document.getElementById('taskChart').getContext('2d'), {
+                        type: 'doughnut',
+                        data: data,
+                        options: {
+                            maintainAspectRatio: false // Ensure the chart size is constrained by the container
+                        }
+                    });
+                }
+            }
+
+            new Sortable(taskList, {
+                animation: 150
+            });
+
+            window.addTask = addTask; // Expose function to global scope for button onclick
+        });
+    </script>
+</body>
+</html>
